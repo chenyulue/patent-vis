@@ -1,3 +1,3 @@
-# Patent Visualization Tutorial
+# 专利分析可视化教程
 
-This repo is a basic tutorial about patent visualization with python.
+这是一个用python实现专利分析可视化的简单教程。
