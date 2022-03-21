@@ -275,7 +275,7 @@ if __name__ == '__main__':
     Blues = cm.get_cmap('PuBu_r')
     blues = mcolors.ListedColormap(Blues(np.linspace(0, 1, 256))[:114])
     
-    data = pd.read_csv('C:/Users/xj/py/patent-vis/data/G20.csv')
+    data = pd.read_csv('./data/G20.csv')
     fig, ax = plt.subplots()
     treemap = ax.treemap(data, area=1, 
                          levels=['hemisphere','region','econ_classification','country'], label=True,
