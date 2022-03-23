@@ -42,10 +42,6 @@ def text_with_autofit(
     
     if transform is None:
         transform = txtobj.get_transform()
-        
-    # Get the position of the text in pixels.    
-    x0, y0 = txtobj.get_position()
-    ha, va = txtobj.get_horizontalalignment(), txtobj.get_verticalalignment()
     
     # Get the width and height of the box in pixels.
     width_in_pixels, height_in_pixels = dist2pixels(transform, width, height)
@@ -58,6 +54,15 @@ def text_with_autofit(
     txtobj.set_fontsize(adjusted_fontsize)
     
     if show_rect: 
+        # Get the position of the text in pixels.    
+        x0, y0 = txtobj.get_position()
+        ha, va = txtobj.get_horizontalalignment(), txtobj.get_verticalalignment()
+        
+        # Transform the text position into the position in the current coordinates.
+        x0, y0 = transform.inverted().transform(
+            txtobj.get_transform().transform((x0, y0))
+        )
+        
         xa0 = {
             'center': x0 - width / 2,
             'left': x0,
