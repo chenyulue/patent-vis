@@ -47,9 +47,15 @@ def text_with_autofit(
     width_in_pixels, height_in_pixels = dist2pixels(transform, width, height)
     
     render = txtobj.axes.get_figure().canvas.get_renderer()
+    rotation = txtobj.get_rotation()
     fontsize = txtobj.get_fontsize()
+    
+    # Set the rotation of the text to be zero so that the bbox reflects the 
+    # width and height of the rendered text
     bbox = txtobj.get_window_extent(render)
-    adjusted_fontsize = fontsize * width_in_pixels / bbox.width
+    
+    adjusted_fontsize = min(fontsize * width_in_pixels / bbox.width,
+                            fontsize * height_in_pixels / bbox.height)
     
     txtobj.set_fontsize(adjusted_fontsize)
     
@@ -76,7 +82,7 @@ def text_with_autofit(
             'center_baseline': y0 - height / 2,
         }[va]
         
-        rect = mpatches.Rectangle((xa0, ya0), width, height, 
+        rect = mpatches.Rectangle((xa0, ya0), width, height, angle=rotation,
                                   fill=False, ls='--', transform=transform)
         txtobj.axes.add_patch(rect)
         
