@@ -1,5 +1,6 @@
 import math
 import textwrap
+import re
 
 import matplotlib.patches as mpatches
 import matplotlib.text as mtext
@@ -154,6 +155,35 @@ def text_with_autowrap(
         return txtobj, rect
     
     return txtobj
+
+
+def get_wrapped_fontsize(txt, height, width, n, linespacing, aspect_ratio):
+    h_fontsize_in_pixels = calc_fontsize_in_pixels(
+            height, 
+            n, 
+            linespacing
+            )
+    words = split_words(txt)
+    lines = ['']
+    
+
+def split_words(txt):
+    regex = r"[\u4e00-\ufaff]|[0-9]+|[a-zA-Z]+\'*[a-z]*"
+    matches = re.findall(regex, txt, re.UNICODE)
+    return matches
+
+def combine_words(words):
+    new_words = [
+        word + ' ' if (not is_Chinese(word[-1]) and (not is_Chinese(next_word[-1]))) else word
+        for word, next_word in zip(words, words[1:])
+    ]
+    new_words.append(words[-1])
+    return ''.join(new_words)
+
+def is_Chinese(character):
+    code_point = ord(character)
+    return code_point >= 0x4e00 and code_point <= 0xfaff
+
 
 def calc_fontsize_in_pixels(height, n, linespacing):
     """Calculate the fontsize according to the box height and wrapped lines.
