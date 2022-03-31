@@ -5,6 +5,8 @@ import re
 import matplotlib.patches as mpatches
 import matplotlib.text as mtext
 import matplotlib.transforms as mtrans
+from matplotlib.font_manager import FontProperties, findfont, get_font
+from matplotlib.backends.backend_agg import get_hinting_flag
 
 
 def text_with_autofit(
@@ -104,39 +106,28 @@ def text_with_autowrap(
     
     render = txtobj.axes.get_figure().canvas.get_renderer()
     dpi = txtobj.axes.get_figure().get_dpi()
-    max_fontsize = pixels2points(
-        dpi,
-        height_in_pixels
-        )
     
-    txtobj.set_fontsize(max_fontsize)
     bbox = txtobj.get_window_extent(render)
     
     if bbox.width <= width_in_pixels:
         return txtobj
     
-    line_num = 2
-    aspect_ratio = bbox.width / len(txtobj.get_text()) / bbox.height  # This varies with the font!!
-    while True:
-        scaled_fontsize_in_pixels = calc_fontsize_in_pixels(
-            height_in_pixels, 
-            line_num, 
-            txtobj._linespacing
-            )
-        pixels_per_char = aspect_ratio * scaled_fontsize_in_pixels
-        wrap_length = max(1, width_in_pixels // pixels_per_char)
-        wrapped_text = textwrap.wrap(txtobj.get_text(), int(wrap_length))
-        
-        if len(wrapped_text) <= line_num:
-            break
-        
-        line_num += 1
-        
-    txtobj.set_text('\n'.join(wrapped_text))
-    txtobj.set_fontsize(pixels2points(
-        dpi,
-        scaled_fontsize_in_pixels
-    ))
+    words = split_words(txtobj.get_text())
+    fontsizes = []
+    for line_num in range(2, len(words) + 1):
+        adjusted_size_txt = get_wrapped_fontsize(
+            txtobj.get_text(), height_in_pixels, width_in_pixels, 
+            line_num, txtobj._linespacing, dpi, txtobj.get_fontproperties()
+        )
+        fontsizes.append(adjusted_size_txt)
+    
+    # grow = True, the fontsize will be as large as possible    
+    # adjusted_size, wrap_txt, _ = max(fontsizes, key=lambda x: x[0])
+    # grow = False, the text will be as wide as the box
+    adjusted_size, wrap_txt, _ = min(fontsizes, key=lambda x: x[2])
+    txtobj.set_text('\n'.join(wrap_txt))
+    txtobj.set_fontsize(adjusted_size)
+    
         
     if show_rect: 
         # Get the position of the text bounding box in pixels.    
@@ -157,14 +148,23 @@ def text_with_autowrap(
     return txtobj
 
 
-def get_wrapped_fontsize(txt, height, width, n, linespacing, aspect_ratio):
-    h_fontsize_in_pixels = calc_fontsize_in_pixels(
-            height, 
-            n, 
-            linespacing
-            )
+def get_wrapped_fontsize(txt, height, width, n, linespacing, dpi, fontprops):
     words = split_words(txt)
-    lines = ['']
+    min_length = max(map(len, words))
+    # Keep the longest word not to be broken
+    wrap_length = max(min_length, len(txt) // n)
+    wrap_txt = textwrap.wrap(txt, wrap_length)
+    w_fontsize, delta_w = calc_fontsize_from_width(
+        wrap_txt, width, dpi, fontprops
+        )
+    
+    h_fontsize = calc_fontsize_from_height(
+            height, len(wrap_txt), linespacing, dpi
+            )
+    
+    #print('wrapped=> ', n, h_fontsize, w_fontsize, wrap_txt)
+    
+    return min(h_fontsize, w_fontsize), wrap_txt, delta_w
     
 
 def split_words(txt):
@@ -172,21 +172,52 @@ def split_words(txt):
     matches = re.findall(regex, txt, re.UNICODE)
     return matches
 
-def combine_words(words):
-    new_words = [
-        word + ' ' if (not is_Chinese(word[-1]) and (not is_Chinese(next_word[-1]))) else word
-        for word, next_word in zip(words, words[1:])
-    ]
-    new_words.append(words[-1])
-    return ''.join(new_words)
+# def combine_words(words, length):
+#     new_words = [
+#         word + ' ' if (not is_Chinese(word[-1]) and (not is_Chinese(next_word[-1]))) else word
+#         for word, next_word in zip(words, words[1:])
+#     ]
+#     new_words.append(words[-1])
+    
+#     line = []
+#     lines = []
+#     i = 0
+#     for word in new_words:
+#         line.append(word)
+#         i += len(word)
+#         if (i > length):
+#             lines.append(''.join(line))
+#             line = []
+#             i = 0
+    
+#     # The last line
+#     lines.append(''.join(line))
+    
+#     return lines
 
 def is_Chinese(character):
     code_point = ord(character)
     return code_point >= 0x4e00 and code_point <= 0xfaff
 
 
-def calc_fontsize_in_pixels(height, n, linespacing):
-    """Calculate the fontsize according to the box height and wrapped lines.
+def calc_fontsize_from_width(lines, width, dpi, fontprops):
+    props = fontprops
+    font = get_font(findfont(props))
+    font.set_size(props.get_size_in_points(), dpi)
+    fontsizes = []
+    for line in lines:
+        font.set_text(line, 0, flags=get_hinting_flag())
+        w, _ = font.get_width_height()
+        w = w / 64.0 # Divide the subpixels
+        adjusted_size = props.get_size_in_points() * width / w 
+        fontsizes.append((adjusted_size, abs(width - w)))
+    
+    #print('fontsize from width: ', fontsizes)
+        
+    return min(fontsizes, key=lambda x: x[0])
+
+def calc_fontsize_from_height(height, n, linespacing, dpi):
+    """Calculate the fontsize according to the box height and wrapped line numbers.
 
     Parameters
     ----------
@@ -202,7 +233,9 @@ def calc_fontsize_in_pixels(height, n, linespacing):
     float
         The fontsize
     """    
-    return height / (n * linespacing - linespacing + 1)
+    h_pixels =  height / (n * linespacing - linespacing + 1)
+    
+    return pixels2points(dpi, h_pixels)
         
         
 def dist2pixels(transform, dist, *dists):
@@ -274,25 +307,4 @@ def pixels2points(dpi, pixels):
         The points for fontsize, linewidth, etc.
     """    
     inch_per_point = 1 / 72
-    return pixels / dpi / inch_per_point
-
-# Refence https://stackoverflow.com/questions/4018860/text-box-with-line-wrapping-in-matplotlib
-def min_dist_inside(point, rotation, box):
-    """Get the space in a given direction from `point` to the boundaries of
-    `box`.
-
-    Parameters
-    ----------
-    point : tuple of float
-        The text start point
-    rotation : float
-        The text angle in degrees
-    box : an object with `x0`, `y0`, `x1` and `y1` attributes
-        The box region
-        
-    Returns
-    -------
-    float
-        The minum distance inside the box
-    """ 
-    pass   
+    return pixels / dpi / inch_per_point  
