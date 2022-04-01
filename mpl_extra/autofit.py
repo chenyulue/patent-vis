@@ -41,8 +41,8 @@ def text_with_autofit(
         
     Returns
     -------
-    Text or Annotation
-        The auto-fitted Text
+    Text
+        The auto-fitted Text object.
     """
     if width < 0 or height < 0:
         raise ValueError('`width` and `height` should be a number >= 0.')
