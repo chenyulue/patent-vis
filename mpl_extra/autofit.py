@@ -47,9 +47,9 @@ def text_with_autofit(
     if width < 0 or height < 0:
         raise ValueError('`width` and `height` should be a number >= 0.')
     
-    if wrap and (txtobj.get_rotation() % 90):
-        raise ValueError('`wrap` option only supports the horizontal or vertical text object.')
-    
+    if wrap and txtobj.get_rotation():
+        raise ValueError('`wrap` option only supports the horizontal text object.')
+
     if transform is None:
         transform = txtobj.get_transform()
     
@@ -70,6 +70,7 @@ def text_with_autofit(
         words = split_words(original_txt)
         fontsizes = []
         
+        # The wrapped text has at least two lines.
         for line_num in range(2, len(words) + 1):
             adjusted_size_txt = get_wrapped_fontsize(
                 original_txt, height_in_pixels, width_in_pixels, 
@@ -83,13 +84,15 @@ def text_with_autofit(
         # grow = False, the text will be as wide as the box
         else:
             adjusted_size, wrap_txt, _ = min(fontsizes, key=lambda x: x[2])
-            
+        
+        # Choose the larger fontsize between the wrapped and non-wrapped texts.    
         if adjusted_fontsize < adjusted_size:
             adjusted_fontsize = adjusted_size
             txtobj.set_text('\n'.join(wrap_txt))
             
     txtobj.set_fontsize(adjusted_fontsize)
     
+    # The box region, only for debug usgage.
     if show_rect: 
         # Get the position of the text bounding box in pixels.    
         x0, y0, *_ = txtobj.get_window_extent(render).bounds
@@ -107,73 +110,6 @@ def text_with_autofit(
         return txtobj, rect
         
     return txtobj
-        
-
-# def text_with_autowrap(
-#     txtobj,
-#     width,
-#     height,
-#     *,
-#     transform=None,
-#     show_rect=False
-# ):
- 
-#     import textwrap
-       
-#     if width < 0 or height < 0:
-#         raise ValueError('`width` and `height` should be a number >= 0.')
-    
-#     if txtobj.get_rotation():
-#         raise ValueError('`wrap` option only supports the text object with a 0 rotation.')
-    
-#     if transform is None:
-#         transform = txtobj.get_transform()
-        
-#     # Get the width and height of the box in pixels.
-#     width_in_pixels, height_in_pixels = dist2pixels(transform, width, height)
-    
-#     render = txtobj.axes.get_figure().canvas.get_renderer()
-#     dpi = txtobj.axes.get_figure().get_dpi()
-    
-#     bbox = txtobj.get_window_extent(render)
-    
-#     if bbox.width <= width_in_pixels:
-#         return txtobj
-    
-#     words = split_words(txtobj.get_text())
-#     fontsizes = []
-#     for line_num in range(2, len(words) + 1):
-#         adjusted_size_txt = get_wrapped_fontsize(
-#             txtobj.get_text(), height_in_pixels, width_in_pixels, 
-#             line_num, txtobj._linespacing, dpi, txtobj.get_fontproperties()
-#         )
-#         fontsizes.append(adjusted_size_txt)
-    
-#     # grow = True, the fontsize will be as large as possible    
-#     # adjusted_size, wrap_txt, _ = max(fontsizes, key=lambda x: x[0])
-#     # grow = False, the text will be as wide as the box
-#     adjusted_size, wrap_txt, _ = min(fontsizes, key=lambda x: x[2])
-#     txtobj.set_text('\n'.join(wrap_txt))
-#     txtobj.set_fontsize(adjusted_size)
-    
-        
-#     if show_rect: 
-#         # Get the position of the text bounding box in pixels.    
-#         x0, y0, *_ = txtobj.get_window_extent(render).bounds
-        
-#         # Transform the box position into the position in the current coordinates.
-#         x0, y0 = transform.inverted().transform((x0, y0))
-        
-#         rect = mpatches.Rectangle(
-#             (x0, y0), 
-#             width, 
-#             height, 
-#             fill=False, ls='--', transform=transform)
-#         txtobj.axes.add_patch(rect)
-        
-#         return txtobj, rect
-    
-#     return txtobj
 
 
 def get_wrapped_fontsize(txt, height, width, n, linespacing, dpi, fontprops):
