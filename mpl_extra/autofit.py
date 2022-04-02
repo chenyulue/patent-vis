@@ -113,7 +113,8 @@ def text_with_autofit(
 
 
 def get_wrapped_fontsize(txt, height, width, n, linespacing, dpi, fontprops):
-    """Get the fontsize according to the wrapped text.
+    """Get the fontsize according to the wrapped text, which makes the longest
+    line to fit into the box.
 
     Parameters
     ----------
@@ -155,7 +156,7 @@ def get_wrapped_fontsize(txt, height, width, n, linespacing, dpi, fontprops):
     delta_w = get_line_gap_from_boxedge(wrap_txt, adjusted_fontsize, width, dpi, fontprops)
     #print('wrapped=> ', n, h_fontsize, w_fontsize, wrap_txt)
     
-    return min(h_fontsize, w_fontsize), wrap_txt, delta_w
+    return adjusted_fontsize, wrap_txt, delta_w
 
 
 def get_line_gap_from_boxedge(lines, fontsize, width, dpi, fontprops):
