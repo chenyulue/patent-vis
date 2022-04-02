@@ -37,8 +37,8 @@ def get_plot_data(
         
     if isinstance(data, pd.DataFrame):
         if area is None:
-            raise TypeError('`area` must be specified when `data` is a DataFrame.'
-                            'It can be a `str`, a `number` or a list of `number`s.')
+            raise TypeError('`area` must be specified when `data` is a DataFrame. '
+                            'It can be a `str`, a `number` or a list of `numbers`.')
             
         if isinstance(area, str):
             levels.append(area)
@@ -82,9 +82,12 @@ def get_plot_data(
         
     if isinstance(labels, str):
         try:
-            selected_data[label_colname] = data[labels]
+            selected_data[label_colname] = data.loc[:, labels]
         except KeyError:
             raise KeyError('columns specified by `labels` not included in `data`.')
+        except AttributeError:
+            raise ValueError('`data` does not support `labels` specified by a string. '
+                             'Specify the `labels` by a list of string.')
     elif labels is not None:
         label_arr = np.atleast_1d(labels)
         try:
