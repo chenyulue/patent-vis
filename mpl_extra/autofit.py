@@ -11,6 +11,7 @@ def text_with_autofit(
     width, 
     height,
     *,
+    pad=(0.0, 0.0),
     wrap=False,
     grow=False,
     transform=None,
@@ -27,6 +28,8 @@ def text_with_autofit(
         The width of the box.
     height : float
         The height of the box.
+    pad : float
+        The padding in points surrounding the text.
     wrap : bool, optional
         If True, the text will be auto-wrapped into the box to get a fontsize 
         as big as possible.
@@ -60,6 +63,11 @@ def text_with_autofit(
     fontsize = txtobj.get_fontsize()
     dpi = txtobj.axes.get_figure().get_dpi()
     original_txt = txtobj.get_text()
+    
+    padx_in_pixels = render.points_to_pixels(pad[0])
+    pady_in_pixels = render.points_to_pixels(pad[1])
+    width_in_pixels -= 2 * padx_in_pixels
+    height_in_pixels -= 2 * pady_in_pixels
     
     bbox = txtobj.get_window_extent(render)
     
