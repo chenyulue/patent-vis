@@ -11,9 +11,11 @@ def text_with_autofit(
     width, 
     height,
     *,
-    pad=(0.0, 0.0),
+    pad=0.0,
     wrap=False,
     grow=False,
+    max_fontsize=None,
+    min_fontsize=None,
     transform=None,
     show_rect=False,
 ):
@@ -64,15 +66,21 @@ def text_with_autofit(
     dpi = txtobj.axes.get_figure().get_dpi()
     original_txt = txtobj.get_text()
     
-    padx_in_pixels = render.points_to_pixels(pad[0])
-    pady_in_pixels = render.points_to_pixels(pad[1])
-    width_in_pixels -= 2 * padx_in_pixels
-    height_in_pixels -= 2 * pady_in_pixels
+    pad_left, pad_right, pad_top, pad_bottom = get_pad(pad)
+    padleft_in_pixels = render.points_to_pixels(pad_left)
+    padright_in_pixels = render.points_to_pixels(pad_right)
+    padtop_in_pixels = render.points_to_pixels(pad_top)
+    padbottom_in_pixels = render.points_to_pixels(pad_bottom)
+    width_in_pixels -= padleft_in_pixels + padright_in_pixels
+    height_in_pixels -= padtop_in_pixels + padbottom_in_pixels
     
     bbox = txtobj.get_window_extent(render)
     
     adjusted_fontsize = min(fontsize * width_in_pixels / bbox.width,
                             fontsize * height_in_pixels / bbox.height)
+    adjusted_fontsize = adjust_fontsize(adjusted_fontsize,
+                                        max_fontsize,
+                                        min_fontsize) 
     
     if wrap:
         words = split_words(original_txt)
@@ -86,18 +94,22 @@ def text_with_autofit(
                 )
             fontsizes.append(adjusted_size_txt)
         
-        # grow = True, the fontsize will be as large as possible    
-        if grow:
-            adjusted_size, wrap_txt, _ = max(fontsizes, key=lambda x: x[0])
-        # grow = False, the text will be as wide as the box
-        else:
-            adjusted_size, wrap_txt, _ = min(fontsizes, key=lambda x: x[2])
-        
-        # Choose the larger fontsize between the wrapped and non-wrapped texts.    
-        if adjusted_fontsize < adjusted_size:
-            adjusted_fontsize = adjusted_size
-            txtobj.set_text('\n'.join(wrap_txt))
+        if fontsizes:
+            # grow = True, the fontsize will be as large as possible    
+            if grow:
+                adjusted_size, wrap_txt, _ = max(fontsizes, key=lambda x: x[0])
+            # grow = False, the text will be as wide as the box
+            else:
+                adjusted_size, wrap_txt, _ = min(fontsizes, key=lambda x: x[2])
             
+            adjusted_size = adjust_fontsize(adjusted_size,
+                                            max_fontsize,
+                                            min_fontsize) 
+            # Choose the larger fontsize between the wrapped and non-wrapped texts.    
+            if adjusted_fontsize < adjusted_size:
+                adjusted_fontsize = adjusted_size
+                txtobj.set_text('\n'.join(wrap_txt))
+          
     txtobj.set_fontsize(adjusted_fontsize)
     
     # The box region, only for debug usgage.
@@ -118,6 +130,28 @@ def text_with_autofit(
         return txtobj, rect
         
     return txtobj
+
+
+def adjust_fontsize(size, max_size, min_size):
+    if max_size is not None:
+        size = min(max_size, size)
+    if min_size is not None:
+        size = max(min_size, size)
+    return size
+
+
+def get_pad(pad):
+    if isinstance(pad, (int, float)):
+        pad_left, pad_right, pad_top, pad_bottom = pad, pad, pad, pad
+    elif isinstance(pad, tuple) and (len(pad) == 2):
+        pad_left, pad_top = pad
+        pad_right, pad_bottom = pad
+    elif isinstance(pad, tuple) and (len(pad) == 4):
+        pad_left, pad_right, pad_top, pad_bottom = pad
+    else:
+        raise ValueError('`pad` can only be a number, or a tuple of two or four numbers.')
+    
+    return pad_left, pad_right, pad_top, pad_bottom
 
 
 def get_wrapped_fontsize(txt, height, width, n, linespacing, dpi, fontprops):

@@ -10,11 +10,14 @@ import numpy as np
 import pandas as pd
 import matplotlib.patches as mpatches
 from matplotlib import cm
+#import matplotlib.text as mtext
 import matplotlib.colors as mcolors
+
 
 import squarify
 
 from . import autofit
+from . import TreemapContainer as trc
 
 def treemap(
     axes,
@@ -34,6 +37,8 @@ def treemap(
     rectprops=None,
     textprops=None,      
 ):  
+    tr_container = trc.TreemapContainer({},{}, handles={})
+    
     plot_data = get_plot_data(
         data=data,
         area=area,
@@ -69,18 +74,26 @@ def treemap(
     
     for k, subgroup in squarified.items():
         if k in subgroup_rectprops:
-            draw_subgroup(axes, subgroup, top, norm_y, cmap, 
-                          subgroup_rectprops[k], subgroup_textprops[k], False)
-        elif (k == levels[-1]) or (k not in levels):
-            draw_subgroup(axes, subgroup, top, norm_y, cmap, 
-                          rectprops, textprops, True)
+            rect_artists, text_artists, handles, mappable = draw_subgroup(
+                axes, subgroup, top, norm_y, cmap, 
+                subgroup_rectprops[k], 
+                subgroup_textprops.get(k, {}), 
+                False)
+        elif levels is None or (k == levels[-1]) or (k not in levels):
+            rect_artists, text_artists, handles, mappable = draw_subgroup(
+                axes, subgroup, top, norm_y, cmap, 
+                rectprops, textprops, True)
+            
+        tr_container.patches[k] = rect_artists
+        tr_container.texts[k] = text_artists
+        tr_container.handles[k] = handles
+        
+    tr_container.mappable = mappable
+        
+    return tr_container
 
 
-# def dict_update(dt1, dt2):
-#     for k, v in dt2.items():
-#         dt1.setdefault(k, v)  
-          
-    
+# Private API    
 def draw_subgroup(
     axes, 
     subgroup, 
@@ -91,57 +104,90 @@ def draw_subgroup(
     textprops, 
     is_leaf
     ):
-    if is_leaf and ('_fill_' in subgroup.columns):
+    rect_artists = []
+    text_artists = []
+    handles_artists = None
+    mappable_artists = None
+    
+    if ('_fill_' in subgroup.columns):
         colors = get_colormap(cmap, subgroup['_fill_'])
         fill_is_numeric = np.issubdtype(subgroup.loc[:, '_fill_'].dtype, np.number)
         if fill_is_numeric: 
             max_value = subgroup['_fill_'].max()
             min_value = subgroup['_fill_'].min()
             norm = mcolors.Normalize(vmin=min_value, vmax=max_value)
+            mappable_artists = cm.ScalarMappable(norm, colors)
+        else:
+            handles_artists = [mpatches.Patch(color=v, label=k)
+                               for k, v in colors.items()]
         
     for idx in subgroup.index:
-        if is_leaf and ('_fill_' in subgroup.columns) and fill_is_numeric:
+        if ('_fill_' in subgroup.columns) and fill_is_numeric:
             rectprops['color'] = colors(norm(subgroup.loc[idx, '_fill_']))
-        elif is_leaf and ('_fill_' in subgroup.columns):
-            #print(idx)
-            rectprops['color'] = colors[subgroup.loc[idx, '_fill_']]
+        elif ('_fill_' in subgroup.columns):
+            rectprops['color'] = colors[subgroup.loc[idx, '_fill_']]           
         
         rect = subgroup.loc[idx, '_rect_']
         y0 = norm_y - rect['y'] - rect['dy'] if top else rect['y']
-        #print(f'y0={y0}, height={height}')
         patch = mpatches.Rectangle(
             (rect['x'], y0), rect['dx'], rect['dy'],
-            **rectprops  # Todo: split the kwargs
+            **rectprops
             )
         axes.add_patch(patch)
         
+        rect_artists.append(patch)
+        
         if textprops and ('_label_' in subgroup.columns):
-            extra = ['grow', 'wrap', 'xmax', 'ymax', 'place']
+            extra = ['grow', 'wrap', 'xmax', 'ymax', 'place', 
+                     'max_fontsize', 'min_fontsize']
             grow = textprops.get('grow', False)
             wrap = textprops.get('wrap', False)
             xmax = textprops.get('xmax', 1)
             ymax = textprops.get('ymax', 1)
             place = textprops.get('place', 'center')
+            max_fontsize = textprops.get('max_fontsize', None)
+            min_fontsize = textprops.get('min_fontsize', None)
+            
             xa0, ya0, width, height = rect['x'], y0, rect['dx'], rect['dy']
-            (x, y, ha, va) = get_position(xa0, ya0, width, height, place)
+            
+            margin = patch.get_linewidth()
+            offset, = points2dist(margin, axes.figure.get_dpi(), axes.transData)
+            (x, y, ha, va) = get_position(xa0, ya0, width, height, place, (offset, offset))
+            
             text_kwargs = {k:v for k, v in textprops.items() if k not in extra}
-            #print(text_kwargs)
             if is_leaf:
                 txtobj = axes.text(x, y, subgroup.loc[idx, '_label_'], 
                           ha=ha, va=va, **text_kwargs)
             else:
-                subgroup_label = [lbl for lbl in idx if lbl is not None][-1]
+                if isinstance(idx, tuple):
+                    subgroup_label = [lbl for lbl in idx if lbl][-1]
+                else:
+                    subgroup_label = idx
                 txtobj = axes.text(x, y, subgroup_label, 
                                    ha=ha, va=va, **text_kwargs)
-            padx = xmax == 1
-            pady = ymax == 1
-            autofit.text_with_autofit(txtobj, xmax*width, ymax*height, 
-                                      pad=(padx, pady), wrap=wrap, grow=grow)
-                       
+            
+            padx = margin if xmax == 1 else 0
+            pady = margin if ymax == 1 else 0
+            txtobj = autofit.text_with_autofit(txtobj, xmax*width, ymax*height, 
+                                                pad=(padx, pady), 
+                                                wrap=wrap, grow=grow,
+                                                max_fontsize=max_fontsize,
+                                                min_fontsize=min_fontsize)
+            
+            text_artists.append(txtobj)      
+            
+    return rect_artists, text_artists, handles_artists, mappable_artists  
 
-def get_position(x, y, dx, dy, pos):
-    x_pos = {'center': x + dx/2, 'left': x, 'right': x + dx}
-    y_pos = {'center': y + dy/2, 'bottom': y, 'top': y + dy}
+
+def points2dist(points, dpi, transform):
+    inch_per_point = 1 / 72
+    pixels = points * inch_per_point * dpi
+    return autofit.pixels2dist(transform, pixels)
+
+
+def get_position(x, y, dx, dy, pos, pad):
+    x_pos = {'center': x + dx/2, 'left': x+pad[0], 'right': x + dx-pad[0]}
+    y_pos = {'center': y + dy/2, 'bottom': y+pad[1], 'top': y + dy-pad[1]}
     name_dict = {'b':'bottom', 'c':'center', 't':'top', 'l':'left', 'r':'right'}
     try:
         if (pos == 'c') or (pos == 'center') or (pos == 'centre'):
@@ -200,14 +246,15 @@ def squarify_subgroups(
             parent_idx = set(idx[:-1] for idx in subgroup.index)
             for parent in parent_idx:
                 child_group = subgroup.loc[parent, :]
+                #child_group = child_group.sort_index()
                 parent_rect = data[levels[i-1]].loc[parent, rect_colname]
                 x, y, dx, dy = parent_rect['x'], parent_rect['y'], parent_rect['dx'], parent_rect['dy']
                 child_group = squarify_data(
                     child_group, 
-                    x + (0 if pd.isna(child_group.index[0]) else pad_left), 
-                    y + (0 if pd.isna(child_group.index[0]) else pad_bottom), 
-                    dx - (0 if pd.isna(child_group.index[0]) else pad_left + pad_right), 
-                    dy - (0 if pd.isna(child_group.index[0]) else pad_bottom + pad_top)
+                    x + (0 if (not child_group.index[0]) else pad_left), 
+                    y + (0 if (not child_group.index[0]) else pad_bottom), 
+                    dx - (0 if (not child_group.index[0]) else pad_left + pad_right), 
+                    dy - (0 if (not child_group.index[0]) else pad_bottom + pad_top)
                     )
                 subgroup.loc[parent, rect_colname] = child_group[rect_colname].values
                 
@@ -262,7 +309,7 @@ def get_subgroups(
         current_level.append(level)
         subgroups[level] = data.groupby(
             by=current_level,
-            sort=False,
+            #sort=False,
             dropna=False
             ).agg(agg_fun)
         
@@ -356,4 +403,4 @@ def get_plot_data(
         except ValueError:
             raise ValueError('The length of `fill` does not match the length of `data`.')
         
-    return selected_data
+    return selected_data.fillna('')
