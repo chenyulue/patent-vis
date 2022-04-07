@@ -15,6 +15,7 @@ import matplotlib.colors as mcolors
 
 
 import squarify
+from tomlkit import key_value
 
 from . import autofit
 from . import TreemapContainer as trc
@@ -32,32 +33,13 @@ def treemap(
     norm_y=100,
     top=False,
     pad=0.0,
+    split=False,
     subgroup_rectprops=None,
     subgroup_textprops=None,
     rectprops=None,
     textprops=None,      
 ):  
     tr_container = trc.TreemapContainer({},{}, handles={})
-    
-    plot_data = get_plot_data(
-        data=data,
-        area=area,
-        labels=labels,
-        fill=fill, 
-        levels=levels
-    )
-    
-    subgroups = get_subgroups(
-        plot_data, levels=levels
-    )
-    
-    squarified = squarify_subgroups(
-        subgroups,
-        norm_x=norm_x,
-        norm_y=norm_y,
-        levels=levels,
-        pad=pad
-    )
     
     if rectprops is None:
         rectprops = {}
@@ -69,6 +51,32 @@ def treemap(
     if subgroup_textprops is None:
         subgroup_textprops = {}
     
+    plot_data = get_plot_data(
+        data=data,
+        area=area,
+        labels=labels,
+        fill=fill, 
+        levels=levels
+    )
+    
+    subgroups = get_subgroups(
+        plot_data, split=split, levels=levels
+    )
+    
+    sub_pads = {levels[-1]: rectprops.get('pad', pad)} if levels is not None else {}
+    for k, v in subgroup_rectprops.items():
+        sub_pads[k] = v.get('pad', pad)
+    squarified = squarify_subgroups(
+        subgroups,
+        norm_x=norm_x,
+        norm_y=norm_y,
+        levels=levels,
+        pad=pad,
+        split=split,
+        subgroup_pads=sub_pads,
+    )
+    
+    
     axes.set_xlim([0, norm_x])
     axes.set_ylim([0, norm_y])
     
@@ -79,14 +87,16 @@ def treemap(
                 subgroup_rectprops[k], 
                 subgroup_textprops.get(k, {}), 
                 False)
+            tr_container.patches[k] = rect_artists
+            tr_container.texts[k] = text_artists
+            tr_container.handles[k] = handles
         elif levels is None or (k == levels[-1]) or (k not in levels):
             rect_artists, text_artists, handles, mappable = draw_subgroup(
                 axes, subgroup, top, norm_y, cmap, 
                 rectprops, textprops, True)
-            
-        tr_container.patches[k] = rect_artists
-        tr_container.texts[k] = text_artists
-        tr_container.handles[k] = handles
+            tr_container.patches[k] = rect_artists
+            tr_container.texts[k] = text_artists
+            tr_container.handles[k] = handles
         
     tr_container.mappable = mappable
         
@@ -129,9 +139,10 @@ def draw_subgroup(
         
         rect = subgroup.loc[idx, '_rect_']
         y0 = norm_y - rect['y'] - rect['dy'] if top else rect['y']
+        kwargs = {k:v for k, v in rectprops.items() if k != 'pad'}
         patch = mpatches.Rectangle(
             (rect['x'], y0), rect['dx'], rect['dy'],
-            **rectprops
+            **kwargs
             )
         axes.add_patch(patch)
         
@@ -139,7 +150,7 @@ def draw_subgroup(
         
         if textprops and ('_label_' in subgroup.columns):
             extra = ['grow', 'wrap', 'xmax', 'ymax', 'place', 
-                     'max_fontsize', 'min_fontsize']
+                     'max_fontsize', 'min_fontsize', 'padx', 'pady']
             grow = textprops.get('grow', False)
             wrap = textprops.get('wrap', False)
             xmax = textprops.get('xmax', 1)
@@ -147,32 +158,47 @@ def draw_subgroup(
             place = textprops.get('place', 'center')
             max_fontsize = textprops.get('max_fontsize', None)
             min_fontsize = textprops.get('min_fontsize', None)
+            padx = textprops.get('padx', None)
+            pady = textprops.get('pady', None)
             
             xa0, ya0, width, height = rect['x'], y0, rect['dx'], rect['dy']
             
-            margin = patch.get_linewidth()
-            offset, = points2dist(margin, axes.figure.get_dpi(), axes.transData)
-            (x, y, ha, va) = get_position(xa0, ya0, width, height, place, (offset, offset))
+            marginx = patch.get_linewidth() if padx is None else padx
+            marginy = patch.get_linewidth() if pady is None else pady
+            offsetx, = points2dist(marginx, axes.figure.get_dpi(), axes.transData)
+            offsety, = points2dist(marginy, axes.figure.get_dpi(), axes.transData)
+            (x, y, ha, va) = get_position(xa0, ya0, width, height, place, (offsetx, offsety))
             
             text_kwargs = {k:v for k, v in textprops.items() if k not in extra}
+            
+            padx1 = marginx if xmax == 1 else 0
+            pady1 = marginy if ymax == 1 else 0
+            #print('padx: ', padx1, ' pady: ', pady1)
+            
             if is_leaf:
-                txtobj = axes.text(x, y, subgroup.loc[idx, '_label_'], 
-                          ha=ha, va=va, **text_kwargs)
+                txtobj = autofit.AutoFitText(
+                    x, y, xmax*width, ymax*height,
+                    subgroup.loc[idx, '_label_'], 
+                    pad=(padx1, pady1), 
+                    wrap=wrap, grow=grow,
+                    max_fontsize=max_fontsize,
+                    min_fontsize=min_fontsize,
+                    ha=ha, va=va, **text_kwargs)
             else:
                 if isinstance(idx, tuple):
                     subgroup_label = [lbl for lbl in idx if lbl][-1]
                 else:
                     subgroup_label = idx
-                txtobj = axes.text(x, y, subgroup_label, 
-                                   ha=ha, va=va, **text_kwargs)
+                txtobj = autofit.AutoFitText(
+                    x, y, xmax*width, ymax*height, 
+                    subgroup_label,
+                    pad=(padx1, pady1),
+                    wrap=wrap, grow=grow,
+                    max_fontsize=max_fontsize,
+                    min_fontsize=min_fontsize, 
+                    ha=ha, va=va, **text_kwargs)
             
-            padx = margin if xmax == 1 else 0
-            pady = margin if ymax == 1 else 0
-            txtobj = autofit.text_with_autofit(txtobj, xmax*width, ymax*height, 
-                                                pad=(padx, pady), 
-                                                wrap=wrap, grow=grow,
-                                                max_fontsize=max_fontsize,
-                                                min_fontsize=min_fontsize)
+            txtobj = txtobj.auto_fit(axes)
             
             text_artists.append(txtobj)      
             
@@ -210,13 +236,15 @@ def get_position(x, y, dx, dy, pos, pad):
         
 
 def get_colormap(cmap, fill_col):
-    if np.issubdtype(fill_col.dtype, np.number):
+    if isinstance(cmap, dict):
+        colors = cmap
+    elif np.issubdtype(fill_col.dtype, np.number):
         colors = cmap if isinstance(cmap, mcolors.Colormap) else cm.get_cmap(cmap)
     else:
-        if cmap is not None:
-            colors = cmap if isinstance(cmap, list) else [cmap]
-        else:
+        try:
             colors = cm.get_cmap(cmap, fill_col.nunique()).colors
+        except ValueError:
+            colors = cmap if isinstance(cmap, list) else [cmap]
         colors = dict(zip(fill_col.unique(), itertools.cycle(colors)))
         
     return colors
@@ -229,32 +257,42 @@ def squarify_subgroups(
     norm_y,
     levels=None,
     pad=0.0,
+    split=False,
+    subgroup_pads=None,
 ):
     rect_colname = '_rect_'
+    
+    if subgroup_pads is None:
+        subgroup_pads = {}
 
     if levels is None:
         for k, v in data.items():
-            data[k] = squarify_data(v, x=0, y=0, dx=norm_x, dy=norm_y)
+            data[k] = squarify_data(v, x=0, y=0, dx=norm_x, dy=norm_y, split=False)
         return data
     
     for i, level in enumerate(levels):
         subgroup = data[level]
         if not i: # The root subgroup
-            data[level] = squarify_data(subgroup, x=0, y=0, dx=norm_x, dy=norm_y)
+            data[level] = squarify_data(subgroup, x=0, y=0, dx=norm_x, dy=norm_y, 
+                                        split=split)
         else:   # The non-root subgroup
-            pad_left, pad_right, pad_top, pad_bottom = get_surrounding_pad(pad)
+            sub_pad = subgroup_pads.get(level, pad)
+            #print('sub_pad:', sub_pad)
+            pad_left, pad_right, pad_top, pad_bottom = get_surrounding_pad(sub_pad)
             parent_idx = set(idx[:-1] for idx in subgroup.index)
             for parent in parent_idx:
                 child_group = subgroup.loc[parent, :]
                 #child_group = child_group.sort_index()
                 parent_rect = data[levels[i-1]].loc[parent, rect_colname]
                 x, y, dx, dy = parent_rect['x'], parent_rect['y'], parent_rect['dx'], parent_rect['dy']
+                #print(x, y, dx, dy)
                 child_group = squarify_data(
                     child_group, 
                     x + (0 if (not child_group.index[0]) else pad_left), 
                     y + (0 if (not child_group.index[0]) else pad_bottom), 
                     dx - (0 if (not child_group.index[0]) else pad_left + pad_right), 
-                    dy - (0 if (not child_group.index[0]) else pad_bottom + pad_top)
+                    dy - (0 if (not child_group.index[0]) else pad_bottom + pad_top),
+                    split=False
                     )
                 subgroup.loc[parent, rect_colname] = child_group[rect_colname].values
                 
@@ -275,23 +313,31 @@ def get_surrounding_pad(pad):
     return pad_left, pad_right, pad_top, pad_bottom
                 
 
-def squarify_data(df, x, y, dx, dy):
+def squarify_data(df, x, y, dx, dy, split):
     area_colname = '_area_'
     rect_colname = '_rect_'
     # squarify needs the data of sizes to be positive values sorted 
     # in descending order.
     sorted_df = df.sort_values(by=area_colname, ascending=False)
-    sorted_df[rect_colname] = squarify.squarify(
-        sizes=squarify.normalize_sizes(
-            sorted_df[area_colname].values, dx, dy
-        ), x=x, y=y, dx=dx, dy=dy
-    )
+    if split:
+        sorted_df[rect_colname] = squarify.padded_squarify(
+            sizes=squarify.normalize_sizes(
+                sorted_df[area_colname].values, dx, dy
+            ), x=x, y=y, dx=dx, dy=dy
+        )
+    else:
+        sorted_df[rect_colname] = squarify.squarify(
+            sizes=squarify.normalize_sizes(
+                sorted_df[area_colname].values, dx, dy
+            ), x=x, y=y, dx=dx, dy=dy
+        )
     
     return df.loc[:, df.columns != rect_colname].join(sorted_df.loc[:, rect_colname])
     
 
 def get_subgroups(
     data,
+    split=False,
     levels=None
 ):
     if levels is None:
@@ -312,6 +358,8 @@ def get_subgroups(
             #sort=False,
             dropna=False
             ).agg(agg_fun)
+        if split and level == levels[0]:
+            subgroups[level]['_area_'] = 1
         
     return subgroups
 

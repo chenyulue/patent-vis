@@ -2,8 +2,162 @@ import textwrap
 import re
 
 import matplotlib.patches as mpatches
+import matplotlib.text as mtext
+from matplotlib.cbook import CallbackRegistry
 from matplotlib.font_manager import findfont, get_font
 from matplotlib.backends.backend_agg import get_hinting_flag
+from tomlkit import value
+
+
+class AutoFitText(mtext.Text):
+    def __repr__(self):
+        return f'AutoFitText(({self._x}, {self._y}), {self._width}, {self._height}, {self._origin_text})'
+    
+    def __init__(
+        self, 
+        x, y, 
+        width, height, 
+        text='', 
+        *,
+        pad=0.0, 
+        wrap=False, 
+        grow=False, 
+        max_fontsize=None,
+        min_fontsize=None,
+        show_rect=False,
+        **kwargs):
+        super().__init__(x, y, text, **kwargs)
+        self._origin_text = text
+        self._width = width
+        self._height = height
+        self._pad = pad
+        self._wrap = wrap
+        self._grow = grow
+        self._max_fontsize = max_fontsize
+        self._min_fontsize = min_fontsize
+        self._show_rect = show_rect
+        self._kwargs = kwargs
+        self._callbacks = CallbackRegistry()
+        self._validate_text()
+        
+    def _validate_text(self):
+        if self._width < 0 or self._height < 0:
+            raise ValueError('`width` and `height` should be a number >= 0.')
+        if self._wrap and super().get_rotation():
+            raise ValueError('`wrap` option currently only supports the horizontal text object.')
+        
+    def __call__(self, event):
+        # todo: This callback needs to be improved.
+        text_with_autofit(
+            self, self._width, self._height,
+            pad=self._pad,
+            wrap=self._wrap,
+            grow=self._grow,
+            max_fontsize=self._max_fontsize,
+            min_fontsize=self._min_fontsize,
+            transform=self.get_transform(),
+            show_rect=self._show_rect)
+        
+        #self.stale = True
+        
+        #print('points: ', self.get_fontsize())
+        
+        # fig = self.axes.get_figure()
+        # func_handles = fig.canvas.callbacks.callbacks[event.name]
+        # fig.canvas.callbacks.callbacks[event.name] = {}
+
+        # fig.canvas.draw()
+
+        # fig.canvas.callbacks.callbacks[event.name] = func_handles
+    
+    def auto_fit(self, axes):
+        txtobj = axes.add_artist(self)
+        
+        # result = text_with_autofit(
+        #     txtobj, self._width, self._height,
+        #     pad=self._pad,
+        #     wrap=self._wrap,
+        #     grow=self._grow,
+        #     max_fontsize=self._max_fontsize,
+        #     min_fontsize=self._min_fontsize,
+        #     transform=self.get_transform(),
+        #     show_rect=self._show_rect)
+        
+        ##### todo: draw_event Interactive needs to be improved.        
+        self._cid = axes.get_figure().canvas.mpl_connect('draw_event', self)
+        #axes.get_figure().canvas.mpl_connect('resize_event', self)
+        
+        #self._callbacks.connect('redraw', self.re_draw)
+        
+        return txtobj
+    
+    # def re_draw(self):
+    #     text_with_autofit(
+    #         self, self._width, self._height,
+    #         pad=self._pad,
+    #         wrap=self._wrap,
+    #         grow=self._grow,
+    #         max_fontsize=self._max_fontsize,
+    #         min_fontsize=self._min_fontsize,
+    #         transform=self.get_transform(),
+    #         show_rect=self._show_rect)
+    
+    @property
+    def width(self):
+        return self._width
+    
+    @width.setter
+    def width(self, value):
+        self._width = value
+        #self._callbacks.process('redraw')
+        self.stale = True
+        
+    @property
+    def height(self):
+        return self._height
+    
+    @height.setter
+    def height(self, value):
+        self._height = value
+        #self._callbacks.process('redraw')
+        self.stale = True
+        
+    @property
+    def wrap(self):
+        return self._wrap
+        
+    @wrap.setter
+    def wrap(self, value):
+        self._wrap = value
+        self.stale = True
+        
+    @property
+    def grow(self):
+        return self._grow
+    
+    @grow.setter
+    def grow(self, value):
+        self._grow = value
+        self.stale = True
+        
+    @property
+    def max_fontsize(self):
+        return self._max_fontsize
+    
+    @max_fontsize.setter
+    def max_fontsize(self, value):
+        self._max_fontsize = value
+        self.stale = True
+        
+    @property
+    def min_fontsize(self):
+        return self._min_fontsize
+    
+    @min_fontsize.setter
+    def min_fontsize(self, value):
+        self._min_fontsize = value
+        self.stale = True
+
 
 
 def text_with_autofit(
@@ -64,7 +218,12 @@ def text_with_autofit(
     render = txtobj.axes.get_figure().canvas.get_renderer()
     fontsize = txtobj.get_fontsize()
     dpi = txtobj.axes.get_figure().get_dpi()
-    original_txt = txtobj.get_text()
+    try:
+        original_txt = txtobj._origin_text
+    except AttributeError:
+        original_txt = txtobj.get_text()
+        
+    #print('original_text: ', original_txt)
     
     pad_left, pad_right, pad_top, pad_bottom = get_pad(pad)
     padleft_in_pixels = render.points_to_pixels(pad_left)
@@ -73,17 +232,22 @@ def text_with_autofit(
     padbottom_in_pixels = render.points_to_pixels(pad_bottom)
     width_in_pixels -= padleft_in_pixels + padright_in_pixels
     height_in_pixels -= padtop_in_pixels + padbottom_in_pixels
+    #print(pad_left, pad_right, pad_top, pad_bottom)
     
     bbox = txtobj.get_window_extent(render)
     
-    adjusted_fontsize = min(fontsize * width_in_pixels / bbox.width,
-                            fontsize * height_in_pixels / bbox.height)
+    if bbox.width == 0 or bbox.height == 0:
+        adjusted_fontsize = 1
+    else:
+        adjusted_fontsize = min(fontsize * width_in_pixels / bbox.width,
+                                fontsize * height_in_pixels / bbox.height)
     adjusted_fontsize = adjust_fontsize(adjusted_fontsize,
                                         max_fontsize,
                                         min_fontsize) 
     
     if wrap:
         words = split_words(original_txt)
+        #print(type(original_txt), original_txt)
         fontsizes = []
         
         # The wrapped text has at least two lines.
@@ -109,7 +273,8 @@ def text_with_autofit(
             if adjusted_fontsize < adjusted_size:
                 adjusted_fontsize = adjusted_size
                 txtobj.set_text('\n'.join(wrap_txt))
-          
+    
+    #print(adjusted_fontsize)      
     txtobj.set_fontsize(adjusted_fontsize)
     
     # The box region, only for debug usgage.
