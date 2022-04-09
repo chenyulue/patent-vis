@@ -15,7 +15,6 @@ import matplotlib.colors as mcolors
 
 
 import squarify
-from tomlkit import key_value
 
 from . import autofit
 from . import TreemapContainer as trc
@@ -32,13 +31,124 @@ def treemap(
     norm_x=100, 
     norm_y=100,
     top=False,
-    pad=0.0,
+    pad=0.0,     # value in data coordinates
     split=False,
     subgroup_rectprops=None,
     subgroup_textprops=None,
     rectprops=None,
     textprops=None,      
 ):  
+    """Plot a treemap based on the `squarify` package.
+
+    Parameters
+    ----------
+    axes : Axes
+        The axes where the treemap will be drawn.
+    data : DataFrame | list[number]
+        The recommended data type is a pandas `DataFrame`. However, a list of 
+        numbers can also be accepted.
+    area : None | int | float | str | list[number], optional
+        If `data` is a `DataFrame`, `area` cannot be `None`. If `data` is a list 
+        of numbers, `area` won't take effect. 
+        
+        +-------------------------+--------------------------------------+
+        | Type                    |  Description                         |
+        +=========================+======================================+
+        | int or float            |  Constant tile sizes                 |
+        +-------------------------+--------------------------------------+
+        | str                     |  Column names in the data            |
+        +-------------------------+--------------------------------------+
+        | list[number]            |  Specify tile sizes manually.        |
+        +-------------------------+--------------------------------------+
+    labels : None | str | list[str], optional
+        Specify the column in the data (`DataFrame`) used as labels for the leaf tiles, by default None.
+        You can specify them manually by a list of strings.
+    fill : None | str | list, optional
+        Specify the column in the data (`DataFrame`) used to determine the fill color
+        for the leaf tiles, by default None. You can also specify it manually by a list
+        of strings or numbers.
+    cmap : None | str | dict | list, optional
+        `cmap` takes effect only when fill is specified, which gives the color mapping
+        according to `fill`. It can be a dict or a list of colors, or a matplotlib cmap
+        string or color string. If None, then cmap is determined by matplotlib's `get_cmap`.
+    levels : None | list[str], optional
+        If you want to get a hierarchical treemap, `levels` should be specified, and it
+        takes effect only when `data` is a `DataFrame`. `levels` is a list of column names
+        according to the hierarchy, that is, the first column is the root level and the last
+        column is the leaf levels.
+    norm_x : int, optional
+        x values for normalization used by `squarify` package, by default 100
+    norm_y : int, optional
+        y values for normalization used by `squarify` package, by default 100. 
+        Diffrent `norm_y` and `norm_x` can give different slices in the treemap. 
+    top : bool, optional
+        If top == True, then the treemap will be upside down, by default False.
+        It is used to control the appearance of the treemap, such as putting the 
+        larger tiles above the smaller ones.
+    pad : float | a 2- or 4-tuple of float, optional
+        Specify the global tile padding in points between a parent level and a child level, by default 0.0.
+        It can be overridden by the `pad` attributes in `subgroup_rectprops` and `rectprops`.
+        A 2- or 4-tuple can be used to specify the horizontal and vertical padding, or the
+        left, right, top, and bottom padding.  
+        
+        Note that `pad` value is in data coordinates, not in points.  
+    split : bool, optional
+        If split == True, the treemap will split into tiles of the same sizes at 
+        its root level, by default False. It only takes effect for a hierarchical
+        treemap, that is, `levels` is not `None`.
+    subgroup_rectprops : dict of dict, optional
+        Specify the tile properties of levels except the leaf levels, by default None.
+        The outer dict has the level names as its keys, while the inner dict has 
+        the tile properties as its keys. 
+        
+        As for tile properties, they include all the `Rectangle` properties plus an
+        additional property `pad` (in data coordinates), which specifies the tile 
+        padding between the current level and its parent level and override the 
+        global `pad` parameter.
+    subgroup_textprops : dict of dict, optional
+        Similar to `subgroup_rectprops`, it specify the label properties of levels
+        except the leaf level, by default None.
+        
+        As for label properties, they include all the `Text` properties plus the
+        following additional properties:
+        
+        +--------------+---------------------------------------------------------------+
+        | wrap         | If True, the text will be auto-wrapped to fit the tile region.|
+        +--------------+---------------------------------------------------------------+
+        | grow         | If True, the wrapped text will be as large as possible.       |
+        +--------------+---------------------------------------------------------------+
+        | xmax         | [0-1], shrink the width of box for the text to fit.           |
+        +--------------+---------------------------------------------------------------+
+        | ymax         | [0-1], shrink the height of box for the text to fit.          |
+        +--------------+---------------------------------------------------------------+
+        | place        | The location of label in the tile. It can be 'center',        |
+        |              | 'center left', 'center right', 'bottom left', 'bottom center' |
+        |              | 'bottom right', 'top left', 'top center', 'top right'. The    |
+        |              | short form is 'c', 'cl', 'cr', 'bl', 'bc', 'br', 'tl', 'tc',  |
+        |              | and 'tr'.                                                     |
+        +--------------+---------------------------------------------------------------+
+        | max_fontsize | The maximum fontsize of the label.                            |
+        +--------------+---------------------------------------------------------------+
+        | min_fontsize | The minimum fontsize of the label.                            |
+        +--------------+---------------------------------------------------------------+
+        | padx         | The horizontal padding in points between the label and the    |
+        |              | tile edge.                                                    |
+        +--------------+---------------------------------------------------------------+
+        | pady         | The vertical padding in points between the label and the      |
+        |              | tile edge.                                                    |
+        +--------------+---------------------------------------------------------------+
+    rectprops : dict, optional
+        Specify the tile properties of the leaf level, by default None. Like 
+        `subgroup_rectprops`, it has an additional property `pad`.
+    textprops : dict, optional
+        Specify the label properties of leaf level, by default None. Like 
+        `subgroup_textprops`, it has additional properties as above.
+
+    Returns
+    -------
+    _type_
+        _description_
+    """    
     tr_container = trc.TreemapContainer({},{}, handles={})
     
     if rectprops is None:
@@ -256,7 +366,7 @@ def squarify_subgroups(
     norm_x,
     norm_y,
     levels=None,
-    pad=0.0,
+    pad=0.0,        # value in data coordinates
     split=False,
     subgroup_pads=None,
 ):

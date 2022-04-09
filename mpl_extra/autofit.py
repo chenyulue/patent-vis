@@ -1,12 +1,11 @@
 import textwrap
 import re
 
+import matplotlib as mpl
 import matplotlib.patches as mpatches
 import matplotlib.text as mtext
-from matplotlib.cbook import CallbackRegistry
 from matplotlib.font_manager import findfont, get_font
 from matplotlib.backends.backend_agg import get_hinting_flag
-from tomlkit import value
 
 
 class AutoFitText(mtext.Text):
@@ -26,8 +25,45 @@ class AutoFitText(mtext.Text):
         min_fontsize=None,
         show_rect=False,
         **kwargs):
+        """Create a `.AutoFitText` instance at *x*, *y* with the string *text*
+        autofitting into the box with the size of *width* x *height*.
+
+        Parameters
+        ----------
+        x : float
+            The x coordinates
+        y : float
+            The y coordinates
+        width : float, 
+            The width of the box, which should be positive.
+        height : float
+            The height of the box, which should be positive.
+        text : str, optional
+            The string that needs to be auto-fitted, by default ''
+        pad : float, a 2-tuple or a 4-tuple, optional
+            The surrounding padding in points from the box edges, by default 0.0. A 2-tuple
+            of `(padx, pady)` specifies the horizontal and vertical paddings
+            respectively, while a 4-tuple of (`padleft, padright, padtop, padbottom)` 
+            the padding from the corresponding four edges.
+        wrap : bool, optional
+            If `True`, then the text will be auto-wrapped to fit into the box, by default False
+        grow : bool, optional
+            If `True`, then the auto-wrapped text will be as large as possible, by default False.
+            This option takes effect only when `wrap = True`.
+        max_fontsize : float, optional
+            The maximum fontsize in points, by default None. This option makes sure that
+            the auto-fitted text won't have a fontsize larger than *max_fontsize*.
+        min_fontsize : float, optional
+            The minimum fontsize in points, by default None. This option makes sure that 
+            the auto-fitted text won't have a fontsize smaller than *min_fontsize*.
+        show_rect : bool, optional
+            If True, show the box edge for the debug purpose. Default to False, 
+            and usually you won't need it to be `True`.
+        **kwargs : 
+            Additional kwargs are passed to `~matplotlib.text.Text`.
+        """        
         super().__init__(x, y, text, **kwargs)
-        self._origin_text = text
+        self._origin_text = text    # Keep the original, unwrapped text
         self._width = width
         self._height = height
         self._pad = pad
@@ -37,17 +73,23 @@ class AutoFitText(mtext.Text):
         self._min_fontsize = min_fontsize
         self._show_rect = show_rect
         self._kwargs = kwargs
-        self._callbacks = CallbackRegistry()
         self._validate_text()
         
     def _validate_text(self):
+        ''' Validate the `.AutoFitText` instance to make sure that *width* and *height* 
+        are positive. If wrap = `True`, it only supports the horizontal text object for simplicity.
+        '''        
         if self._width < 0 or self._height < 0:
             raise ValueError('`width` and `height` should be a number >= 0.')
         if self._wrap and super().get_rotation():
             raise ValueError('`wrap` option currently only supports the horizontal text object.')
         
     def __call__(self, event):
-        # todo: This callback needs to be improved.
+        ''' An `.AutoFitText` instance is callable when some events, such 
+        as *draw_event*, *resize_event* etc, happens. This is used to update 
+        the `.AutoFitText` instance.
+        '''
+        # todo: This callback needs to be improved and be more efficient.
         text_with_autofit(
             self, self._width, self._height,
             pad=self._pad,
@@ -57,50 +99,26 @@ class AutoFitText(mtext.Text):
             min_fontsize=self._min_fontsize,
             transform=self.get_transform(),
             show_rect=self._show_rect)
-        
-        #self.stale = True
-        
-        #print('points: ', self.get_fontsize())
-        
-        # fig = self.axes.get_figure()
-        # func_handles = fig.canvas.callbacks.callbacks[event.name]
-        # fig.canvas.callbacks.callbacks[event.name] = {}
-
-        # fig.canvas.draw()
-
-        # fig.canvas.callbacks.callbacks[event.name] = func_handles
     
     def auto_fit(self, axes):
+        """Auto-fit the instance into the axes
+
+        Parameters
+        ----------
+        axes : Axes
+            The axes where the text will be drawn
+
+        Returns
+        -------
+        The instance of `.AutoFitText` with the text auto-fitted into the box.
+        """        
         txtobj = axes.add_artist(self)
         
-        # result = text_with_autofit(
-        #     txtobj, self._width, self._height,
-        #     pad=self._pad,
-        #     wrap=self._wrap,
-        #     grow=self._grow,
-        #     max_fontsize=self._max_fontsize,
-        #     min_fontsize=self._min_fontsize,
-        #     transform=self.get_transform(),
-        #     show_rect=self._show_rect)
-        
-        ##### todo: draw_event Interactive needs to be improved.        
+        ##### todo: draw_event Interactive needs to be improved and be more efficient.       
         self._cid = axes.get_figure().canvas.mpl_connect('draw_event', self)
         #axes.get_figure().canvas.mpl_connect('resize_event', self)
         
-        #self._callbacks.connect('redraw', self.re_draw)
-        
         return txtobj
-    
-    # def re_draw(self):
-    #     text_with_autofit(
-    #         self, self._width, self._height,
-    #         pad=self._pad,
-    #         wrap=self._wrap,
-    #         grow=self._grow,
-    #         max_fontsize=self._max_fontsize,
-    #         min_fontsize=self._min_fontsize,
-    #         transform=self.get_transform(),
-    #         show_rect=self._show_rect)
     
     @property
     def width(self):
@@ -109,8 +127,7 @@ class AutoFitText(mtext.Text):
     @width.setter
     def width(self, value):
         self._width = value
-        #self._callbacks.process('redraw')
-        self.stale = True
+        self.stale = True   # So that the figure will re-render the text.
         
     @property
     def height(self):
@@ -119,7 +136,6 @@ class AutoFitText(mtext.Text):
     @height.setter
     def height(self, value):
         self._height = value
-        #self._callbacks.process('redraw')
         self.stale = True
         
     @property
@@ -178,20 +194,28 @@ def text_with_autofit(
 
     Parameters
     ----------
-    txtobj : Text or Annotation
-        The Text or Annotation object to be auto-fitted.
+    txtobj : Text 
+        The Text object to be auto-fitted.
     width : float
-        The width of the box.
+        The width of the box, which should be positive.
     height : float
-        The height of the box.
-    pad : float
-        The padding in points surrounding the text.
+        The height of the box, which should be positive.
+    pad : float, a 2-tuple or a 4-tuple, optional
+        The surrounding padding in points from the box edges, by default 0.0. A 2-tuple
+        of `(padx, pady)` specifies the horizontal and vertical paddings
+        respectively, while a 4-tuple of (`padleft, padright, padtop, padbottom)` 
+        the padding from the corresponding four edges.
     wrap : bool, optional
-        If True, the text will be auto-wrapped into the box to get a fontsize 
-        as big as possible.
+        If `True`, then the text will be auto-wrapped to fit into the box, by default False
     grow : bool, optional
-        If True, the wrapped text will be as large as possbile, otherwise the 
-        wrapped text will be as wide as possible.
+        If `True`, then the auto-wrapped text will be as large as possible, by default False.
+        This option takes effect only when `wrap = True`.
+    max_fontsize : float, optional
+        The maximum fontsize in points, by default None. This option makes sure that
+        the auto-fitted text won't have a fontsize larger than *max_fontsize*.
+    min_fontsize : float, optional
+        The minimum fontsize in points, by default None. This option makes sure that 
+        the auto-fitted text won't have a fontsize smaller than *min_fontsize*.
     transform : Transform, optional
         The transformer for the width and height. When default to None, 
         it takes the transformer of txtobj.
@@ -200,8 +224,9 @@ def text_with_autofit(
         
     Returns
     -------
-    Text
-        The auto-fitted Text object.
+    Text or (Text, Rectangle)
+        The auto-fitted Text object. If show_rect = True, the Rectangle box will
+        also be returned.
     """
     if width < 0 or height < 0:
         raise ValueError('`width` and `height` should be a number >= 0.')
@@ -210,20 +235,21 @@ def text_with_autofit(
         raise ValueError('`wrap` option only supports the horizontal text object.')
 
     if transform is None:
+        # The default transformer is same as the textobj.
         transform = txtobj.get_transform()
     
     # Get the width and height of the box in pixels.
     width_in_pixels, height_in_pixels = dist2pixels(transform, width, height)
     
     render = txtobj.axes.get_figure().canvas.get_renderer()
-    fontsize = txtobj.get_fontsize()
+    fontsize = mpl.rcParams['font.size']  # txtobj.get_fontsize()
     dpi = txtobj.axes.get_figure().get_dpi()
     try:
-        original_txt = txtobj._origin_text
+        # Update always autofit the original text, used with AutoFitText instance.
+        original_txt = txtobj._origin_text  
     except AttributeError:
-        original_txt = txtobj.get_text()
-        
-    #print('original_text: ', original_txt)
+        # Works with the default Text instance.
+        original_txt = txtobj.get_text()     
     
     pad_left, pad_right, pad_top, pad_bottom = get_pad(pad)
     padleft_in_pixels = render.points_to_pixels(pad_left)
@@ -232,11 +258,10 @@ def text_with_autofit(
     padbottom_in_pixels = render.points_to_pixels(pad_bottom)
     width_in_pixels -= padleft_in_pixels + padright_in_pixels
     height_in_pixels -= padtop_in_pixels + padbottom_in_pixels
-    #print(pad_left, pad_right, pad_top, pad_bottom)
     
     bbox = txtobj.get_window_extent(render)
     
-    if bbox.width == 0 or bbox.height == 0:
+    if bbox.width == 0 or bbox.height == 0:     # For empty string case
         adjusted_fontsize = 1
     else:
         adjusted_fontsize = min(fontsize * width_in_pixels / bbox.width,
@@ -246,8 +271,8 @@ def text_with_autofit(
                                         min_fontsize) 
     
     if wrap:
+        # Split the string into English words and CJK single characters
         words = split_words(original_txt)
-        #print(type(original_txt), original_txt)
         fontsizes = []
         
         # The wrapped text has at least two lines.
@@ -269,12 +294,11 @@ def text_with_autofit(
             adjusted_size = adjust_fontsize(adjusted_size,
                                             max_fontsize,
                                             min_fontsize) 
-            # Choose the larger fontsize between the wrapped and non-wrapped texts.    
+            # Choose the larger fontsize between the wrapped and unwrapped texts.    
             if adjusted_fontsize < adjusted_size:
                 adjusted_fontsize = adjusted_size
                 txtobj.set_text('\n'.join(wrap_txt))
-    
-    #print(adjusted_fontsize)      
+         
     txtobj.set_fontsize(adjusted_fontsize)
     
     # The box region, only for debug usgage.
@@ -298,6 +322,8 @@ def text_with_autofit(
 
 
 def adjust_fontsize(size, max_size, min_size):
+    ''' Make sure the adjusted fontsize is between min_size and max_size.
+    '''
     if max_size is not None:
         size = min(max_size, size)
     if min_size is not None:
@@ -306,6 +332,8 @@ def adjust_fontsize(size, max_size, min_size):
 
 
 def get_pad(pad):
+    ''' Get the padding between the text and the edges.
+    '''
     if isinstance(pad, (int, float)):
         pad_left, pad_right, pad_top, pad_bottom = pad, pad, pad, pad
     elif isinstance(pad, tuple) and (len(pad) == 2):
@@ -361,12 +389,13 @@ def get_wrapped_fontsize(txt, height, width, n, linespacing, dpi, fontprops):
     
     adjusted_fontsize = min(h_fontsize, w_fontsize)
     delta_w = get_line_gap_from_boxedge(wrap_txt, adjusted_fontsize, width, dpi, fontprops)
-    #print('wrapped=> ', n, h_fontsize, w_fontsize, wrap_txt)
     
     return adjusted_fontsize, wrap_txt, delta_w
 
 
 def get_line_gap_from_boxedge(lines, fontsize, width, dpi, fontprops):
+    '''Get the minimum gap between the wrapped text and the right edge.
+    '''
     props = fontprops
     font = get_font(findfont(props))
     font.set_size(fontsize, dpi)
@@ -428,8 +457,6 @@ def calc_fontsize_from_width(lines, width, dpi, fontprops):
         w = w / 64.0 # Divide the subpixels
         adjusted_size = props.get_size_in_points() * width / w 
         fontsizes.append(adjusted_size)
-    
-    #print('fontsize from width: ', fontsizes)
         
     return min(fontsizes)
 
